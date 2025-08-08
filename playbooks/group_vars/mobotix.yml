@@ -1,0 +1,8 @@
+camera_user: "{{ ansible_user | default('admin') }}"
+camera_pass: "{{ ansible_password | default('') }}"
+
+mobotix_fw_upload_url: "http://{{ inventory_hostname }}/admin/firmware_upload.cgi"
+mobotix_reboot_url: "http://{{ inventory_hostname }}/control/reboot"
+mobotix_status_url: "http://{{ inventory_hostname }}/admin/status.cgi"
+
+firmware_tmp_path: "/tmp/mobotix_firmware.bin"
