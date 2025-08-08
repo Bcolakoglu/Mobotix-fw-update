@@ -1,0 +1,15 @@
+# Authentication for the camera web UI comes from AWX credentials.
+# These defaults let you override via AWX "Machine / Username+Password" credentials.
+camera_user: "{{ ansible_user | default('admin') }}"
+camera_pass: "{{ ansible_password | default('') }}"
+
+# Common HTTP endpoints (adjust later if your model differs)
+mobotix_fw_upload_url: "http://{{ inventory_hostname }}/admin/firmware_upload.cgi"
+mobotix_reboot_url: "http://{{ inventory_hostname }}/control/reboot"
+mobotix_status_url: "http://{{ inventory_hostname }}/admin/status.cgi"
+
+# Where the AWX runner stores the downloaded firmware
+firmware_tmp_path: "/tmp/mobotix_firmware.bin"
+
+# Optional expected version (for a later safety check)
+mobotix_expected_version: ""

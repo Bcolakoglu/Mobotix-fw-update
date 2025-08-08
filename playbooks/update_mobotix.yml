@@ -1,0 +1,99 @@
+---
+- name: Update Mobotix firmware (HTTP flow)
+  hosts: mobotix
+  gather_facts: no
+  serial: 1   # one camera at a time
+
+  vars:
+    # Provided at launch via AWX Survey (pre-signed Wasabi URL or any reachable HTTP/HTTPS link)
+    firmware_url: ""
+
+  pre_tasks:
+    - name: Ensure firmware_url was provided
+      fail:
+        msg: "Please provide the firmware_url in the Survey."
+      when: firmware_url | length == 0
+
+    - name: Show target host and firmware
+      debug:
+        msg: "Updating {{ inventory_hostname }} with {{ firmware_url }}"
+
+    - name: Download firmware to controller (AWX runner)
+      delegate_to: localhost
+      get_url:
+        url: "{{ firmware_url }}"
+        dest: "{{ firmware_tmp_path }}"
+        mode: "0644"
+
+  tasks:
+    - name: Upload firmware to camera (multipart POST)
+      delegate_to: localhost
+      uri:
+        url: "{{ mobotix_fw_upload_url }}"
+        method: POST
+        user: "{{ camera_user }}"
+        password: "{{ camera_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+        body_format: form-multipart
+        body:
+          # NOTE: some models use a different field name than "firmware" (e.g. "file").
+          # If upload fails, we’ll change this key after first test.
+          firmware: "{{ lookup('file', firmware_tmp_path) }}"
+      register: upload_result
+      failed_when: upload_result.status not in [200, 204]
+
+    - name: Reboot camera
+      delegate_to: localhost
+      uri:
+        url: "{{ mobotix_reboot_url }}"
+        method: GET
+        user: "{{ camera_user }}"
+        password: "{{ camera_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+      register: reboot_result
+      changed_when: true
+
+    - name: Wait for camera to go down
+      delegate_to: localhost
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 80
+        state: drained
+        timeout: 180
+
+    - name: Wait for camera to come back
+      delegate_to: localhost
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 80
+        state: started
+        delay: 10
+        timeout: 420
+
+    - name: Try to read status page (best-effort)
+      delegate_to: localhost
+      uri:
+        url: "{{ mobotix_status_url }}"
+        method: GET
+        user: "{{ camera_user }}"
+        password: "{{ camera_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+        return_content: yes
+      register: status_after
+      failed_when: false
+
+    - name: Parse version from status page (best-effort regex)
+      set_fact:
+        mobotix_current_version: >-
+          {{ (status_after.content | default('') | regex_search('Firmware\\s*Version[:\\s]+([0-9\\.]+)', '\\1')) | default('unknown') }}
+      when: status_after is defined
+
+    - name: Report version after update
+      debug:
+        msg: "Camera {{ inventory_hostname }} reports firmware version: {{ mobotix_current_version | default('n/a') }}"
